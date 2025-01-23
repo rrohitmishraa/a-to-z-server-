@@ -18,7 +18,6 @@ mongoose
 const scoreSchema = new mongoose.Schema({
   name: String,
   time: Number,
-  device: String, // 'phone' or 'computer'
 });
 
 const Score = mongoose.model("scores", scoreSchema);
@@ -27,14 +26,7 @@ const Score = mongoose.model("scores", scoreSchema);
 app.get("/api/scores", async (req, res) => {
   try {
     const scores = await Score.find().sort({ time: 1 }); // Sort by time (ascending)
-
-    // Separate scores by device type
-    const phoneScores = scores.filter((score) => score.device === "phone");
-    const computerScores = scores.filter(
-      (score) => score.device === "computer"
-    );
-
-    res.json({ phone: phoneScores, computer: computerScores });
+    res.json(scores); // Return all scores in a single leaderboard
   } catch (error) {
     console.error("Error fetching scores:", error);
     res.status(500).json({ message: "Failed to fetch leaderboard" });
@@ -43,22 +35,20 @@ app.get("/api/scores", async (req, res) => {
 
 // Route to submit a new score
 app.post("/api/scores", async (req, res) => {
-  const { name, time, device } = req.body;
+  const { name, time } = req.body;
 
-  if (!name || !time || !device) {
-    return res
-      .status(400)
-      .json({ message: "Name, time, and device are required." });
+  if (!name || !time) {
+    return res.status(400).json({ message: "Name and time are required." });
   }
 
   try {
-    const newScore = new Score({ name, time, device });
+    const newScore = new Score({ name, time });
     await newScore.save();
 
-    // Update the leaderboard (optional logic, if you want to restrict top 3)
-    const scores = await Score.find({ device }).sort({ time: 1 }).limit(3);
+    // Get all scores, sorted by time
+    const scores = await Score.find().sort({ time: 1 }).limit(3); // Limit to top 3 scores
 
-    res.status(201).json(scores);
+    res.status(201).json(scores); // Return the top 3 scores
   } catch (err) {
     res.status(500).json({ message: "Error saving score" });
   }
