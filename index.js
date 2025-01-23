@@ -1,68 +1,71 @@
-const handleInstagramSubmit = async () => {
-  if (userInstagram.trim() !== "" && tempScore) {
-    const newScore = { ...tempScore, name: userInstagram };
+const express = require("express");
+const mongoose = require("mongoose");
+const cors = require("cors");
+const dotenv = require("dotenv");
+dotenv.config();
 
-    const device = isPhone ? "phone" : "computer";
-    const currentScores = isPhone ? highScoresPhone : highScoresComputer;
+const app = express();
+app.use(express.json());
+app.use(cors({ origin: `*` }));
 
-    // Add the new score to the leaderboard and sort
-    const updatedScores = [...currentScores, newScore]
-      .sort((a, b) => a.time - b.time)
-      .slice(0, 3); // Keep only top 3
+// MongoDB connection
+mongoose
+  .connect(process.env.MONGODB_URI)
+  .then(() => console.log("MongoDB Connected"))
+  .catch((err) => console.error("MongoDB connection error:", err));
 
-    // Update the leaderboard state locally first
-    if (isPhone) {
-      setHighScoresPhone(updatedScores);
-    } else {
-      setHighScoresComputer(updatedScores);
-    }
+// Score Schema & Model
+const scoreSchema = new mongoose.Schema({
+  name: String,
+  time: Number,
+  device: String, // 'phone' or 'computer'
+});
 
-    // Close the modal before sending the request to avoid issues
-    setTempScore(null);
-    setIsModalOpen(false);
+const Score = mongoose.model("scores", scoreSchema);
 
-    // Show "Submitting..." message
-    setSubmitting(true);
+// Endpoint to get leaderboard scores
+app.get("/api/scores", async (req, res) => {
+  try {
+    const scores = await Score.find().sort({ time: 1 }); // Sort by time (ascending)
 
-    try {
-      // Send score to the backend
-      const response = await fetch(
-        "https://a-to-z-server-oa7r.onrender.com/api/scores", // Single endpoint
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            name: userInstagram,
-            time: tempScore.time,
-            device, // Add device here (phone or computer)
-          }),
-        }
-      );
+    // Separate scores by device type
+    const phoneScores = scores.filter((score) => score.device === "phone");
+    const computerScores = scores.filter(
+      (score) => score.device === "computer"
+    );
 
-      if (response.ok) {
-        // Fetch the updated leaderboard from the server
-        const updatedScoresFromServer = await response.json();
-
-        // Separate the scores by device type
-        const phoneScores = updatedScoresFromServer.phone; // From response
-        const computerScores = updatedScoresFromServer.computer; // From response
-
-        // Update the states
-        if (isPhone) {
-          setHighScoresPhone(phoneScores);
-        } else {
-          setHighScoresComputer(computerScores);
-        }
-      } else {
-        console.error("Failed to submit score");
-      }
-    } catch (error) {
-      console.error("Error submitting score:", error);
-    } finally {
-      // Hide "Submitting..." message
-      setSubmitting(false);
-    }
+    res.json({ phone: phoneScores, computer: computerScores });
+  } catch (error) {
+    console.error("Error fetching scores:", error);
+    res.status(500).json({ message: "Failed to fetch leaderboard" });
   }
-};
+});
+
+// Route to submit a new score
+app.post("/api/scores", async (req, res) => {
+  const { name, time, device } = req.body;
+
+  if (!name || !time || !device) {
+    return res
+      .status(400)
+      .json({ message: "Name, time, and device are required." });
+  }
+
+  try {
+    const newScore = new Score({ name, time, device });
+    await newScore.save();
+
+    // Update the leaderboard (optional logic, if you want to restrict top 3)
+    const scores = await Score.find({ device }).sort({ time: 1 }).limit(3);
+
+    res.status(201).json(scores);
+  } catch (err) {
+    res.status(500).json({ message: "Error saving score" });
+  }
+});
+
+// Start the server
+const port = process.env.PORT;
+app.listen(port, () => {
+  console.log(`Server running on port ${port}`);
+});
